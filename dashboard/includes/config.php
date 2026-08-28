@@ -3,7 +3,7 @@
 // Created by Mike Hayward — github.com/Skonamonkey
 define('API_BASE',       rtrim(getenv('API_URL')        ?: 'http://skonadesk-api:21114', '/'));
 define('APP_NAME',       'SkonaDesk');
-define('APP_SECRET',     getenv('APP_SECRET')           ?: 'change_this_secret');
+define('APP_SECRET',     getenv('APP_SECRET')           ?: '');
 define('DATA_PATH',      getenv('DATA_PATH')            ?: '/data');
 define('APP_VERSION',    '1.0.0');
 define('LANG_DIR',       __DIR__ . '/../lang');
