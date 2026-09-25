@@ -30,7 +30,11 @@ function peerRow(p) {
         id:       p.peer_id,
         alias:    p.alias    || '',
         note:     p.note     || '',
-        password: p.password || '',
+        // The stored value is an encrypted blob and must never be handed to a
+        // client. Clients receive only whether a recorded password exists;
+        // reading it back requires the audited reveal endpoint.
+        password: '',
+        has_password: !!(p.password || ''),
         hash:     p.hash     || '',
         tags:     JSON.parse(p.tags || '[]'),
         username: p.username || '',
@@ -42,6 +46,30 @@ function peerRow(p) {
 function fetchAbTags(abGuid) {
     const db = getDb();
     return db.prepare('SELECT name, color FROM ab_tags WHERE ab_guid = ?').all(abGuid);
+}
+
+/**
+ * Normalise a password value arriving from the RustDesk client before it is
+ * written to ab_peers.
+ *
+ * Two cases matter:
+ *  - The client pushes its whole address book back on every sync. Any password it
+ *    sends is a local record, so it must be encrypted before it hits the database.
+ *  - The client may send back a value it previously received from us. Encrypted
+ *    blobs are passed through unchanged so a sync round-trip cannot double-encrypt
+ *    or destroy an existing record.
+ *
+ * Returns '' for empty, or the value to store. Throws nothing; if encryption is
+ * unavailable the password is dropped rather than stored in the clear.
+ */
+function normaliseInboundPassword(value) {
+    const raw = typeof value === 'string' ? value : '';
+    if (raw === '') return '';
+    const crypto = require('../crypto');
+    if (crypto.isEncrypted(raw)) return raw;
+    if (!crypto.vaultAvailable()) return '';
+    const enc = crypto.encrypt(raw);
+    return enc === null ? '' : enc;
 }
 
 // ─── Legacy Address Book ──────────────────────────────────────────────────────
@@ -80,6 +108,15 @@ router.post('/ab', requireAuth, (req, res) => {
     const peers = Array.isArray(abData.peers) ? abData.peers : [];
     const tags  = Array.isArray(abData.tags)  ? abData.tags  : [];
 
+    // The client pushes its whole address book back on every sync, and it only
+    // ever knows the alias/note/tags fields — it is never given the stored
+    // password blob. Preserve any password already recorded for an entry so a
+    // routine sync cannot silently wipe credentials.
+    const existingPasswords = new Map(
+        db.prepare('SELECT peer_id, password FROM ab_peers WHERE ab_guid = ?').all(guid)
+          .map(r => [r.peer_id, r.password || ''])
+    );
+
     db.prepare('DELETE FROM ab_peers WHERE ab_guid = ?').run(guid);
     db.prepare('DELETE FROM ab_tags  WHERE ab_guid = ?').run(guid);
 
@@ -88,7 +125,13 @@ router.post('/ab', requireAuth, (req, res) => {
         VALUES (?, ?, ?, ?, ?, ?)
     `);
     for (const p of peers) {
-        insertPeer.run(guid, p.id || '', p.alias || '', p.note || '', p.password || '', JSON.stringify(p.tags || []));
+        const inbound = typeof p.password === 'string' ? p.password : '';
+        // Only accept a password the client actually supplies; otherwise fall back
+        // to whatever was already recorded for that entry.
+        const pw = inbound === ''
+            ? (existingPasswords.get(p.id || '') || '')
+            : normaliseInboundPassword(inbound);
+        insertPeer.run(guid, p.id || '', p.alias || '', p.note || '', pw, JSON.stringify(p.tags || []));
     }
 
     const insertTag = db.prepare('INSERT OR IGNORE INTO ab_tags (ab_guid, name, color) VALUES (?, ?, 0)');
@@ -157,7 +200,7 @@ router.post('/ab/peer/add/:guid', requireAuth, (req, res) => {
     db.prepare(`
         INSERT OR REPLACE INTO ab_peers (ab_guid, peer_id, alias, note, password, hash, tags, username, hostname, platform)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(req.params.guid, id, alias || '', note || '', password || '', hash || '', JSON.stringify(tags || []), username || '', hostname || '', platform || '');
+    `).run(req.params.guid, id, alias || '', note || '', normaliseInboundPassword(password), hash || '', JSON.stringify(tags || []), username || '', hostname || '', platform || '');
 
     res.send('');
 });
@@ -174,7 +217,7 @@ router.put('/ab/peer/update/:guid', requireAuth, (req, res) => {
 
     const alias    = 'alias'    in body ? body.alias    : existing.alias;
     const note     = 'note'     in body ? body.note     : existing.note;
-    const password = 'password' in body ? body.password : existing.password;
+    const password = 'password' in body ? normaliseInboundPassword(body.password) : existing.password;
     const hash     = 'hash'     in body ? body.hash     : existing.hash;
     const tags     = 'tags'     in body ? JSON.stringify(body.tags) : existing.tags;
     const username = 'username' in body ? body.username : existing.username;
@@ -246,6 +289,107 @@ router.delete('/ab/tag/:guid', requireAuth, (req, res) => {
     }
 
     res.send('');
+});
+
+// ─── Recorded entry passwords ─────────────────────────────────────────────────
+//
+// These endpoints manage the manually-entered password note stored against an
+// address-book entry. This is NOT RustDesk's saved connection password, which the
+// client keeps locally and never sends to the server.
+
+/**
+ * Authorise access to an address book and confirm the peer exists.
+ * Access is granted to the book's owner, or to an admin acting on any book.
+ */
+function authorisePeer(db, req, res) {
+    const book = db.prepare('SELECT guid, owner_id FROM address_books WHERE guid = ?').get(req.params.guid);
+    if (!book) {
+        res.status(404).json({ error: 'Address book not found' });
+        return null;
+    }
+    const isOwner = book.owner_id === req.user.id;
+    if (!isOwner && !req.user.is_admin) {
+        res.status(403).json({ error: 'Not permitted for this address book' });
+        return null;
+    }
+    const peer = db.prepare('SELECT * FROM ab_peers WHERE ab_guid = ? AND peer_id = ?')
+        .get(req.params.guid, req.params.peerId);
+    if (!peer) {
+        res.status(404).json({ error: 'Entry not found' });
+        return null;
+    }
+    return { book, peer, isOwner };
+}
+
+// PUT /api/ab/peer/password/{guid}/{peerId}  — set or clear the recorded password
+// Body: { password: "..." }  — empty string clears it
+router.put('/ab/peer/password/:guid/:peerId', requireAuth, (req, res) => {
+    const db = getDb();
+    const ctx = authorisePeer(db, req, res);
+    if (!ctx) return;
+
+    const { password } = req.body || {};
+    if (typeof password !== 'string') {
+        return res.status(400).json({ error: 'password must be a string' });
+    }
+
+    const crypto = require('../crypto');
+
+    if (password === '') {
+        db.prepare('UPDATE ab_peers SET password = ? WHERE ab_guid = ? AND peer_id = ?')
+          .run('', req.params.guid, req.params.peerId);
+        return res.json({ data: 'ok', cleared: true });
+    }
+
+    const enc = crypto.encrypt(password);
+    if (enc === null) {
+        // Fail closed: never persist a credential we cannot encrypt.
+        return res.status(503).json({
+            error: 'Password storage is unavailable: no usable vault key configured on the server.',
+        });
+    }
+
+    db.prepare('UPDATE ab_peers SET password = ? WHERE ab_guid = ? AND peer_id = ?')
+      .run(enc, req.params.guid, req.params.peerId);
+
+    res.json({ data: 'ok', stored: true });
+});
+
+// POST /api/ab/peer/reveal/{guid}/{peerId}  — decrypt and return the password
+router.post('/ab/peer/reveal/:guid/:peerId', requireAuth, (req, res) => {
+    const db = getDb();
+    const ctx = authorisePeer(db, req, res);
+    if (!ctx) return;
+
+    const crypto = require('../crypto');
+
+    if (!crypto.vaultAvailable()) {
+        return res.status(503).json({ error: 'Password storage is unavailable: no usable vault key configured on the server.' });
+    }
+
+    const stored = ctx.peer.password || '';
+    if (stored === '') {
+        return res.json({ data: 'empty', password: null });
+    }
+
+    const plaintext = crypto.decrypt(stored);
+    if (plaintext === null) {
+        return res.status(422).json({ error: 'Stored password could not be decrypted (wrong key or corrupted record).' });
+    }
+
+    // Every successful reveal is recorded. Address-book entry IDs can identify a
+    // machine, so this is deliberately audited even though it is a read.
+    db.prepare(`
+        INSERT INTO audit_log (event_type, peer_id, user_id, action, note)
+        VALUES ('ab_password_view', ?, ?, ?, ?)
+    `).run(
+        ctx.peer.peer_id,
+        req.user.id,
+        'reveal',
+        `${req.user.username} revealed entry password (${ctx.isOwner ? 'owner' : 'admin'})`
+    );
+
+    res.json({ data: 'ok', password: plaintext });
 });
 
 module.exports = router;

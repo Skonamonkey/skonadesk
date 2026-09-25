@@ -171,7 +171,20 @@
     "copy_done": "%d peer(s) et %d étiquette(s) copiés.",
     "copy_passwords_label": "Copier aussi les mots de passe enregistrés",
     "copy_passwords_help": "Ne copie que les mots de passe saisis manuellement sur les entrées. Les mots de passe RustDesk enregistrés sur chaque appareil ne sont pas concernés.",
-    "copy_done_passwords": "Les mots de passe enregistrés ont été inclus."
+    "copy_done_passwords": "Les mots de passe enregistrés ont été inclus.",
+    "password": "Mot de passe",
+    "password_none": "non enregistré",
+    "password_reveal": "Afficher le mot de passe enregistré",
+    "password_set": "Enregistrer ou modifier le mot de passe",
+    "password_title": "Mot de passe enregistré",
+    "password_label": "Mot de passe",
+    "password_placeholder": "Laisser vide pour ne rien enregistrer",
+    "password_help": "Stocké chiffré. Chaque affichage est consigné dans le journal d’audit.",
+    "password_clear": "Supprimer le mot de passe enregistré",
+    "password_save_btn": "Enregistrer le mot de passe",
+    "password_saved": "Mot de passe enregistré (chiffré).",
+    "password_cleared": "Mot de passe enregistré supprimé.",
+    "password_failed": "Impossible d’enregistrer le mot de passe :"
   },
   "users": {
     "title": "Utilisateurs",

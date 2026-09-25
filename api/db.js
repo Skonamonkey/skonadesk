@@ -143,6 +143,57 @@ function initSchema() {
     for (const sql of migrations) {
         try { db.exec(sql); } catch (_) {}
     }
+
+    encryptLegacyAbPasswords();
+}
+
+/**
+ * One-way migration for passwords recorded against address-book entries before
+ * they were encrypted at rest.
+ *
+ * Rows already matching the vault's `v1:` format are left alone, so this is
+ * idempotent and safe to run on every boot. Anything else that is non-empty is
+ * treated as a legacy plaintext value and encrypted.
+ *
+ * If no vault key is configured we do NOT touch the data: re-encrypting would be
+ * impossible and we would rather leave rows as they are than destroy them. Storage
+ * and reveal both fail closed elsewhere, so the values simply become unusable to
+ * the API rather than being silently rewritten.
+ */
+function encryptLegacyAbPasswords() {
+    const crypto = require('./crypto');
+    if (!crypto.vaultAvailable()) {
+        const pending = db.prepare(
+            "SELECT COUNT(*) AS n FROM ab_peers WHERE password IS NOT NULL AND password != ''"
+        ).get().n;
+        if (pending > 0) {
+            console.warn(
+                `[db] ${pending} address-book password(s) present but no vault key configured ` +
+                `(JWT_SECRET missing or default) — leaving them untouched.`
+            );
+        }
+        return;
+    }
+
+    // ab_peers declares `id INTEGER PRIMARY KEY AUTOINCREMENT`, which in SQLite
+    // makes `id` an alias for the rowid. Selecting the explicit column is the only
+    // reliable way to address a row here — `SELECT rowid` returns it under the name
+    // `id`, so keying off `rowid` silently matches nothing.
+    const legacy = db.prepare(
+        "SELECT id, password FROM ab_peers WHERE password IS NOT NULL AND password != ''"
+    ).all().filter(r => !crypto.isEncrypted(r.password));
+
+    if (legacy.length === 0) return;
+
+    const upd = db.prepare('UPDATE ab_peers SET password = ? WHERE id = ?');
+    const run = db.transaction(() => {
+        for (const row of legacy) {
+            const enc = crypto.encrypt(row.password);
+            if (enc !== null) upd.run(enc, row.id);
+        }
+    });
+    run();
+    console.log(`[db] Encrypted ${legacy.length} legacy address-book password(s) at rest.`);
 }
 
 function seedAdmin() {

@@ -170,7 +170,20 @@
     "copy_done": "%d Peer(s) und %d Tag(s) kopiert.",
     "copy_passwords_label": "Gespeicherte Passwörter ebenfalls kopieren",
     "copy_passwords_help": "Kopiert nur Passwörter, die manuell bei Einträgen hinterlegt wurden. Auf Geräten gespeicherte RustDesk-Passwörter sind nicht betroffen.",
-    "copy_done_passwords": "Hinterlegte Passwörter wurden übernommen."
+    "copy_done_passwords": "Hinterlegte Passwörter wurden übernommen.",
+    "password": "Passwort",
+    "password_none": "nicht hinterlegt",
+    "password_reveal": "Hinterlegtes Passwort anzeigen",
+    "password_set": "Passwort hinterlegen oder ändern",
+    "password_title": "Hinterlegtes Passwort",
+    "password_label": "Passwort",
+    "password_placeholder": "Leer lassen, um nichts zu hinterlegen",
+    "password_help": "Verschlüsselt gespeichert. Jede Anzeige wird im Audit-Log protokolliert.",
+    "password_clear": "Hinterlegtes Passwort entfernen",
+    "password_save_btn": "Passwort speichern",
+    "password_saved": "Passwort hinterlegt (verschlüsselt).",
+    "password_cleared": "Hinterlegtes Passwort entfernt.",
+    "password_failed": "Passwort konnte nicht gespeichert werden:"
   },
   "users": {
     "title": "Benutzer",
