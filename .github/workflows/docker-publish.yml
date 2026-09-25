@@ -112,7 +112,13 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       # Build the arm64 image and push it by digest only. Pushing under a tag here
-      # would overwrite the amd64 image that the previous job just published.
+      # would overwrite the amd64 image that the previous job just published, so
+      # push-by-digest keeps the tag untouched while still uploading the layers.
+      #
+      # NB: `tags` must remain set even though we are pushing by digest — buildx
+      # rejects the build outright with "tag is needed when pushing to registry"
+      # if no tag is supplied, because it still needs a name to register the image
+      # under. push-by-digest is what stops that name being pointed at this build.
       - name: Build and push arm64 by digest
         id: build
         uses: docker/build-push-action@v5
@@ -120,6 +126,7 @@ jobs:
           context: ${{ matrix.context }}
           push: true
           platforms: linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.component }}-arm64
