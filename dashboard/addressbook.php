@@ -55,6 +55,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $resp    = api_request('DELETE', "/ab/tag/$abGuid", [$tagName]);
         $flash   = api_ok($resp) ? __('addressbook.tag_removed') : ("Failed: " . ($resp['error'] ?? 'unknown'));
         if (!api_ok($resp)) $flashType = 'danger';
+
+    } elseif ($action === 'copy_ab' && $user['is_admin']) {
+        $fromId = (int)($_POST['copy_from'] ?? 0);
+        $toId   = (int)($_POST['copy_to']   ?? 0);
+        $mode   = ($_POST['copy_mode'] ?? 'merge') === 'replace' ? 'replace' : 'merge';
+
+        if (!$fromId || !$toId) {
+            $flash = __('addressbook.copy_need_users');
+            $flashType = 'danger';
+        } elseif ($fromId === $toId) {
+            $flash = __('addressbook.copy_same_user');
+            $flashType = 'danger';
+        } else {
+            $resp = api_post('/ab/copy', [
+                'from_user_id'    => $fromId,
+                'to_user_id'      => $toId,
+                'mode'            => $mode,
+                'copy_passwords'  => !empty($_POST['copy_passwords']),
+            ]);
+            if (api_ok($resp)) {
+                $flash = __('addressbook.copy_done',
+                    (int)($resp['peers_copied'] ?? 0),
+                    (int)($resp['tags_copied']  ?? 0));
+                if (!empty($resp['password_copy'])) {
+                    $flash .= ' ' . __('addressbook.copy_done_passwords');
+                }
+            } else {
+                $flash = __('addressbook.copy_failed') . ' ' . ($resp['error'] ?? 'unknown');
+                $flashType = 'danger';
+            }
+        }
     }
 
     $params = [];
@@ -244,6 +275,76 @@ page_open(__('addressbook.title'));
   </div>
 </div>
 
+</div>
+<?php endif; ?>
+
+<?php if ($user['is_admin'] && !empty($userList)): ?>
+<div class="card" style="margin-top:20px;padding:0;overflow:hidden">
+  <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+    <svg data-feather="copy" style="width:16px;height:16px;color:var(--accent)"></svg>
+    <strong style="font-size:var(--font-sm)"><?= __('addressbook.copy_title') ?></strong>
+  </div>
+  <form method="POST" style="padding:20px">
+    <input type="hidden" name="action" value="copy_ab" />
+    <p style="margin:0 0 16px;color:var(--text-muted);font-size:var(--font-sm)">
+      <?= __('addressbook.copy_help') ?>
+    </p>
+
+    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
+      <div class="form-group" style="min-width:180px;margin:0">
+        <label for="copyFrom"><?= __('addressbook.copy_from') ?></label>
+        <select id="copyFrom" name="copy_from" required>
+          <option value=""><?= __('addressbook.copy_pick') ?></option>
+          <?php foreach ($userList as $u): ?>
+          <option value="<?= (int)$u['id'] ?>"><?= htmlspecialchars($u['display_name'] ?: $u['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <div style="padding-bottom:10px;color:var(--text-muted)">
+        <svg data-feather="arrow-right" style="width:18px;height:18px"></svg>
+      </div>
+
+      <div class="form-group" style="min-width:180px;margin:0">
+        <label for="copyTo"><?= __('addressbook.copy_to') ?></label>
+        <select id="copyTo" name="copy_to" required>
+          <option value=""><?= __('addressbook.copy_pick') ?></option>
+          <?php foreach ($userList as $u): ?>
+          <option value="<?= (int)$u['id'] ?>"><?= htmlspecialchars($u['display_name'] ?: $u['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <div class="form-group" style="min-width:180px;margin:0">
+        <label for="copyMode"><?= __('addressbook.copy_mode') ?></label>
+        <select id="copyMode" name="copy_mode">
+          <option value="merge"><?= __('addressbook.copy_mode_merge') ?></option>
+          <option value="replace"><?= __('addressbook.copy_mode_replace') ?></option>
+        </select>
+      </div>
+
+      <button type="submit" class="btn btn-primary"
+        data-confirm="<?= htmlspecialchars(__('addressbook.copy_confirm')) ?>">
+        <svg data-feather="copy"></svg>
+        <?= __('addressbook.copy_btn') ?>
+      </button>
+    </div>
+
+    <div style="margin-top:14px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:var(--font-sm);cursor:pointer">
+        <input type="checkbox" name="copy_passwords" value="1" id="copyPasswords" />
+        <span><?= __('addressbook.copy_passwords_label') ?></span>
+      </label>
+      <div style="margin-top:6px;font-size:0.7rem;color:var(--text-muted)">
+        <?= __('addressbook.copy_passwords_help') ?>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;font-size:0.7rem;color:var(--text-muted)">
+      <svg data-feather="alert-triangle" style="width:12px;height:12px;vertical-align:-1px"></svg>
+      <?= __('addressbook.copy_password_note') ?>
+    </div>
+  </form>
 </div>
 <?php endif; ?>
 
