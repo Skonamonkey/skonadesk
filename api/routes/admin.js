@@ -512,6 +512,7 @@ router.post('/ab/copy', requireAuth, requireAdmin, (req, res) => {
         const setPassword = db.prepare(
             'UPDATE ab_peers SET password = ? WHERE ab_guid = ? AND peer_id = ?'
         );
+        const crypto = require('../crypto');
         for (const p of srcPeers) {
             // password is never written by the upsert: on INSERT it seeds empty, and
             // on conflict it is left alone. Only an explicit copy_passwords sets it,
@@ -521,7 +522,19 @@ router.post('/ab/copy', requireAuth, requireAdmin, (req, res) => {
                 p.hash || '', p.tags || '[]', p.username || '', p.hostname || '', p.platform || ''
             );
             if (copyPasswords && (p.password || '')) {
-                setPassword.run(p.password, toGuid, p.peer_id);
+                // Re-encrypt rather than copying the blob verbatim: the source may be
+                // plaintext (pre-migration) or sealed under an older key, and we only
+                // ever want to store something this version can read back.
+                let toStore = null;
+                if (crypto.isEncrypted(p.password)) {
+                    const plain = crypto.decrypt(p.password);
+                    toStore = plain === null ? null : crypto.encrypt(plain);
+                } else {
+                    toStore = crypto.encrypt(p.password);
+                }
+                if (toStore !== null) {
+                    setPassword.run(toStore, toGuid, p.peer_id);
+                }
             }
         }
 

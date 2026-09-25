@@ -56,6 +56,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash   = api_ok($resp) ? __('addressbook.tag_removed') : ("Failed: " . ($resp['error'] ?? 'unknown'));
         if (!api_ok($resp)) $flashType = 'danger';
 
+    } elseif ($action === 'set_password' && $abGuid) {
+        $peerId = $_POST['peer_id'] ?? '';
+        $pw     = (string)($_POST['peer_password'] ?? '');
+        if ($peerId) {
+            $resp = api_put("/ab/peer/password/$abGuid/" . rawurlencode($peerId), ['password' => $pw]);
+            if (api_ok($resp)) {
+                $flash = $pw === '' ? __('addressbook.password_cleared') : __('addressbook.password_saved');
+            } else {
+                $flash = __('addressbook.password_failed') . ' ' . ($resp['error'] ?? 'unknown');
+                $flashType = 'danger';
+            }
+        }
+
     } elseif ($action === 'copy_ab' && $user['is_admin']) {
         $fromId = (int)($_POST['copy_from'] ?? 0);
         $toId   = (int)($_POST['copy_to']   ?? 0);
@@ -193,6 +206,7 @@ page_open(__('addressbook.title'));
         <th><?= __('addressbook.host_user') ?></th>
         <th><?= __('addressbook.platform') ?></th>
         <th><?= __('addressbook.tags') ?></th>
+        <th><?= __('addressbook.password') ?></th>
         <th><?= __('addressbook.note') ?></th>
         <th></th>
       </tr>
@@ -217,6 +231,21 @@ page_open(__('addressbook.title'));
           <?php foreach ($pTags as $t): ?>
             <span class="badge badge-info" style="margin:1px"><?= htmlspecialchars($t) ?></span>
           <?php endforeach; ?>
+        </td>
+        <td data-pw-cell="<?= htmlspecialchars($p['id'] ?? '') ?>" style="white-space:nowrap">
+          <?php if (!empty($p['has_password'])): ?>
+            <button type="button" class="btn-icon" title="<?= __('addressbook.password_reveal') ?>"
+              onclick="abRevealPassword('<?= htmlspecialchars($abGuid) ?>','<?= htmlspecialchars($p['id'] ?? '') ?>',this)">
+              <svg data-feather="eye" style="width:14px;height:14px"></svg>
+            </button>
+            <code class="ab-pw-value" style="display:none;font-size:0.7rem"></code>
+          <?php else: ?>
+            <span style="color:var(--text-muted);font-size:0.7rem"><?= __('addressbook.password_none') ?></span>
+          <?php endif; ?>
+          <button type="button" class="btn-icon" title="<?= __('addressbook.password_set') ?>"
+            onclick="abEditPassword('<?= htmlspecialchars($abGuid) ?>','<?= htmlspecialchars($p['id'] ?? '') ?>',<?= !empty($p['has_password']) ? 'true' : 'false' ?>)">
+            <svg data-feather="edit-2" style="width:14px;height:14px"></svg>
+          </button>
         </td>
         <td style="color:var(--text-muted);font-size:0.75rem"><?= htmlspecialchars($p['note'] ?? '') ?></td>
         <td>
@@ -450,5 +479,98 @@ function abFillFromDevice(sel) {
     </form>
   </div>
 </div>
+
+<div class="modal-backdrop" id="editPasswordModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title"><?= __('addressbook.password_title') ?></span>
+      <button class="modal-close" data-modal-close><svg data-feather="x"></svg></button>
+    </div>
+    <form method="POST" id="editPasswordForm">
+      <input type="hidden" name="action"  value="set_password" />
+      <input type="hidden" name="ab_guid" value="<?= htmlspecialchars($abGuid) ?>" />
+      <input type="hidden" name="peer_id" id="pwPeerId" value="" />
+      <?php if ($viewUserId !== $user['id']): ?>
+      <input type="hidden" name="user_id" value="<?= $viewUserId ?>" />
+      <?php endif; ?>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="pwValue"><?= __('addressbook.password_label') ?></label>
+          <input type="password" name="peer_password" id="pwValue" autocomplete="new-password"
+                 placeholder="<?= __('addressbook.password_placeholder') ?>" />
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px">
+            <?= __('addressbook.password_help') ?>
+          </div>
+        </div>
+        <div id="pwClearRow" style="display:none;margin-top:12px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:var(--font-sm);cursor:pointer">
+            <input type="checkbox" id="pwClear" onchange="abToggleClear(this)" />
+            <span><?= __('addressbook.password_clear') ?></span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-modal-close><?= __('general.cancel') ?></button>
+        <button type="submit" class="btn btn-primary">
+          <svg data-feather="save"></svg>
+          <?= __('addressbook.password_save_btn') ?>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Entries per book, keyed by the AB guid, so reveal/edit know which book a row
+// belongs to. Peer IDs can repeat across a book, hence the pair.
+function abEditPassword(abGuid, peerId, hasExisting) {
+    document.getElementById('pwPeerId').value = peerId;
+    document.getElementById('pwValue').value = '';
+    document.getElementById('pwClear').checked = false;
+    document.getElementById('pwValue').disabled = false;
+    // only offer "clear" when there is something to clear
+    document.getElementById('pwClearRow').style.display = hasExisting ? 'block' : 'none';
+    document.getElementById('editPasswordModal').classList.add('open');
+}
+
+function abToggleClear(cb) {
+    var input = document.getElementById('pwValue');
+    input.disabled = cb.checked;
+    if (cb.checked) input.value = '';
+}
+
+function abRevealPassword(abGuid, peerId, btn) {
+    var cell = btn.closest('td');
+    var out  = cell.querySelector('.ab-pw-value');
+    if (!out) return;
+
+    // toggle back off if already showing
+    if (out.style.display !== 'none') {
+        out.style.display = 'none';
+        out.textContent = '';
+        return;
+    }
+
+    btn.disabled = true;
+    fetch('ajax/reveal-password.php?ab=' + encodeURIComponent(abGuid) +
+          '&peer=' + encodeURIComponent(peerId), { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            btn.disabled = false;
+            if (d && d.password) {
+                out.textContent = d.password;
+                out.style.display = 'inline';
+            } else {
+                out.textContent = d && d.error ? d.error : 'unavailable';
+                out.style.display = 'inline';
+            }
+        })
+        .catch(function () {
+            btn.disabled = false;
+            out.textContent = 'unavailable';
+            out.style.display = 'inline';
+        });
+}
+</script>
 
 <?php page_close(); ?>

@@ -170,7 +170,20 @@
     "copy_done": "Copied %d peer(s) and %d tag(s).",
     "copy_passwords_label": "Also copy recorded passwords",
     "copy_passwords_help": "Only copies passwords manually recorded against entries below. RustDesk passwords saved on each device are not affected.",
-    "copy_done_passwords": "Recorded passwords were included."
+    "copy_done_passwords": "Recorded passwords were included.",
+    "password": "Password",
+    "password_none": "not recorded",
+    "password_reveal": "Reveal recorded password",
+    "password_set": "Record or change password",
+    "password_title": "Recorded password",
+    "password_label": "Password",
+    "password_placeholder": "Leave blank to record nothing",
+    "password_help": "Stored encrypted. Revealing it is recorded in the audit log.",
+    "password_clear": "Remove the recorded password",
+    "password_save_btn": "Save password",
+    "password_saved": "Password recorded (encrypted).",
+    "password_cleared": "Recorded password removed.",
+    "password_failed": "Could not save the password:"
   },
   "users": {
     "title": "Users",

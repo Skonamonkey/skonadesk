@@ -171,7 +171,20 @@
     "copy_done": "Copiati %d peer e %d tag.",
     "copy_passwords_label": "Copia anche le password registrate",
     "copy_passwords_help": "Copia solo le password inserite manualmente nelle voci. Le password RustDesk salvate su ciascun dispositivo non sono interessate.",
-    "copy_done_passwords": "Le password registrate sono state incluse."
+    "copy_done_passwords": "Le password registrate sono state incluse.",
+    "password": "Password",
+    "password_none": "non registrata",
+    "password_reveal": "Mostra la password registrata",
+    "password_set": "Registra o modifica la password",
+    "password_title": "Password registrata",
+    "password_label": "Password",
+    "password_placeholder": "Lascia vuoto per non registrare nulla",
+    "password_help": "Salvata cifrata. Ogni visualizzazione è registrata nel log di audit.",
+    "password_clear": "Rimuovi la password registrata",
+    "password_save_btn": "Salva password",
+    "password_saved": "Password registrata (cifrata).",
+    "password_cleared": "Password registrata rimossa.",
+    "password_failed": "Impossibile salvare la password:"
   },
   "users": {
     "title": "Utenti",
