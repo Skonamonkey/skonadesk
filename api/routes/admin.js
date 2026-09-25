@@ -445,6 +445,119 @@ router.get('/ab/admin', requireAuth, requireAdmin, (req, res) => {
     res.json({ guid: abRow.guid, peers, tags });
 });
 
+// POST /api/ab/copy  — admin-only: copy one user's address book into another
+// Body: { from_user_id, to_user_id, mode, copy_passwords }
+//   mode: 'merge' (default) | 'replace'
+//   copy_passwords: false (default) — the ab_peers.password column holds any
+//     password an admin has manually recorded against the peer in the dashboard.
+//     RustDesk's own client-side saved password lives in the client's
+//     ~/.config/rustdesk/peers/<id>.toml and is never visible to the server, so
+//     it cannot be transferred either way. Off by default: moving credentials
+//     between accounts should be deliberate, not a side effect of copying.
+router.post('/ab/copy', requireAuth, requireAdmin, (req, res) => {
+    const db = getDb();
+    const { from_user_id, to_user_id } = req.body || {};
+    const mode = (req.body?.mode === 'replace') ? 'replace' : 'merge';
+    const copyPasswords = req.body?.copy_passwords === true;
+
+    const fromId = parseInt(from_user_id);
+    const toId   = parseInt(to_user_id);
+
+    if (!fromId || !toId) return res.status(400).json({ error: 'from_user_id and to_user_id required' });
+    if (fromId === toId)  return res.status(400).json({ error: 'Source and target user must differ' });
+
+    const fromUser = db.prepare('SELECT id, username FROM users WHERE id = ?').get(fromId);
+    const toUser   = db.prepare('SELECT id, username FROM users WHERE id = ?').get(toId);
+    if (!fromUser) return res.status(404).json({ error: 'Source user not found' });
+    if (!toUser)   return res.status(404).json({ error: 'Target user not found' });
+
+    // Resolve (or lazily create) both address books, same rule as getUserPersonalAbGuid
+    function ensureAb(userId) {
+        const ab = db.prepare('SELECT guid FROM address_books WHERE owner_id = ? LIMIT 1').get(userId);
+        if (ab) return ab.guid;
+        const guid = uuidv4();
+        db.prepare("INSERT INTO address_books (guid, owner_id, name) VALUES (?, ?, 'My address book')")
+          .run(guid, userId);
+        return guid;
+    }
+
+    const fromGuid = ensureAb(fromId);
+    const toGuid   = ensureAb(toId);
+
+    if (fromGuid === toGuid) {
+        return res.status(400).json({ error: 'Source and target share an address book' });
+    }
+
+    const srcPeers = db.prepare('SELECT * FROM ab_peers WHERE ab_guid = ?').all(fromGuid);
+    const srcTags  = db.prepare('SELECT name, color FROM ab_tags WHERE ab_guid = ?').all(fromGuid);
+
+    const copy = db.transaction(() => {
+        if (mode === 'replace') {
+            db.prepare('DELETE FROM ab_peers WHERE ab_guid = ?').run(toGuid);
+            db.prepare('DELETE FROM ab_tags  WHERE ab_guid = ?').run(toGuid);
+        }
+
+        const insPeer = db.prepare(`
+            INSERT INTO ab_peers (ab_guid, peer_id, alias, note, password, hash, tags, username, hostname, platform)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ab_guid, peer_id) DO UPDATE SET
+                alias    = excluded.alias,
+                note     = excluded.note,
+                hash     = excluded.hash,
+                tags     = excluded.tags,
+                username = excluded.username,
+                hostname = excluded.hostname,
+                platform = excluded.platform
+        `);
+        const setPassword = db.prepare(
+            'UPDATE ab_peers SET password = ? WHERE ab_guid = ? AND peer_id = ?'
+        );
+        for (const p of srcPeers) {
+            // password is never written by the upsert: on INSERT it seeds empty, and
+            // on conflict it is left alone. Only an explicit copy_passwords sets it,
+            // so a credentials-blind copy can never leak or clobber a password.
+            insPeer.run(
+                toGuid, p.peer_id, p.alias || '', p.note || '', '',
+                p.hash || '', p.tags || '[]', p.username || '', p.hostname || '', p.platform || ''
+            );
+            if (copyPasswords && (p.password || '')) {
+                setPassword.run(p.password, toGuid, p.peer_id);
+            }
+        }
+
+        const insTag = db.prepare(
+            'INSERT OR IGNORE INTO ab_tags (ab_guid, name, color) VALUES (?, ?, ?)'
+        );
+        for (const t of srcTags) {
+            insTag.run(toGuid, t.name, t.color || 0);
+        }
+    });
+
+    copy();
+
+    const peersCopied = srcPeers.length;
+    const tagsCopied  = srcTags.length;
+
+    db.prepare(`
+        INSERT INTO audit_log (event_type, user_id, action, note)
+        VALUES ('ab_copy', ?, ?, ?)
+    `).run(
+        req.user.id,
+        `${fromUser.username} -> ${toUser.username}`,
+        `copied ${peersCopied} peers / ${tagsCopied} tags (${mode}${copyPasswords ? ', incl. passwords' : ', passwords excluded'})`
+    );
+
+    res.json({
+        data: 'ok',
+        peers_copied: peersCopied,
+        tags_copied:  tagsCopied,
+        mode,
+        password_copy: copyPasswords,
+        from: fromUser.username,
+        to:   toUser.username,
+    });
+});
+
 // ── Settings ────────────────────────────────────────────────────────────────
 
 router.get('/settings', requireAuth, requireAdmin, (req, res) => {
