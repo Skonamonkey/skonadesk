@@ -434,6 +434,11 @@ router.get('/ab/admin', requireAuth, requireAdmin, (req, res) => {
         id:       p.peer_id,
         alias:    p.alias    || '',
         note:     p.note     || '',
+        // The stored value is an encrypted blob and must never be handed to a
+        // client; the admin view gets the same treatment as the owner view.
+        // has_password tells the dashboard whether a reveal control is warranted.
+        password: '',
+        has_password: !!(p.password || ''),
         tags:     JSON.parse(p.tags || '[]'),
         username: p.username || '',
         hostname: p.hostname || '',
