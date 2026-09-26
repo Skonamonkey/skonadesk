@@ -30,6 +30,7 @@ SkonaDesk fills that middle ground. It's a self-hosted stack that adds the manag
 **One `docker compose up` and you have:**
 
 - 📋 **Address books** — organise your machines with aliases, notes, and tags, synced directly to the RustDesk client
+- 🔑 **Recorded passwords** — store a machine's password against an entry, encrypted at rest, revealed on demand and every reveal audit-logged *(dashboard only — deliberately not synced to clients, see below)*
 - 🗂️ **Device groups** — group machines by location, team, or purpose; control who can see what
 - 👥 **User management** — create accounts, set admins, manage access
 - 📡 **Live device tracking** — see which machines are online right now, their OS, client version, and hardware specs
@@ -72,6 +73,7 @@ RustDesk Pro is also self-hosted — it's not a cloud service. It's a genuinely 
 | Remote desktop (relay + rendezvous) | ✅ | ✅ | ✅ |
 | Self-hosted | ✅ | ✅ | ✅ |
 | Address books (synced to client) | ✅ | ❌ | ✅ |
+| Recorded passwords (encrypted, audited reveal) | ✅ | ❌ | ✅ |
 | Device groups | ✅ | ❌ | ✅ |
 | User management | ✅ | ❌ | ✅ |
 | Admin dashboard / web console | ✅ | ❌ | ✅ |
@@ -309,6 +311,7 @@ SkonaDesk is provided as-is. You are responsible for securing your own deploymen
 - [ ] For internet-facing deployments, use SSL — do not expose the API or dashboard over plain HTTP on a public IP
 - [ ] Restrict SSH on your server: key-based auth only, disable password login
 - [ ] Back up `./data/id_ed25519` (the server private key) — if lost, all clients need reconfiguring
+- [ ] If you have recorded any address-book passwords, back up `./data/` before rotating `JWT_SECRET` — recorded passwords are encrypted under a key derived from it and cannot be recovered afterwards (see [Recorded passwords](#recorded-passwords--and-what-they-are-not))
 - [ ] Keep Docker images updated periodically
 
 ### Brute-force protection
@@ -323,6 +326,32 @@ The API enforces login rate limiting per **IP + username** combination:
 Keying on IP+username (rather than IP alone) means a misconfigured device on your LAN retrying with wrong credentials will only lock out *that username* from *that IP* — not every user across the whole network.
 
 > **Note:** The lockout state is in-memory and resets if the API container restarts. For persistent lockouts across restarts, sit a reverse proxy with its own rate limiting (e.g. Nginx Proxy Manager's built-in limits) in front.
+
+### Recorded passwords — and what they are not
+
+An address-book entry can carry a password recorded by hand: set it in the dashboard, stored encrypted, revealed on demand by the entry's owner or an admin. Every reveal is written to the audit log as `ab_password_view`.
+
+**This is not RustDesk's saved connection password, and it does not sync to clients.**
+
+RustDesk's own saved password lives on each *client*, in `~/.config/rustdesk/peers/<id>.toml`, encrypted with that machine's key. It is never sent to the server, so SkonaDesk has nothing to hold and nothing to hand back. What this feature stores is a separate, human-entered note of a machine's password, kept alongside the machine in your dashboard.
+
+The practical consequences:
+
+- **Recording a password does not let a client connect without typing it.** The `peers` sync the client performs carries alias, note, and tags only. Passwords are never included in that payload.
+- **Copying an address book between users does not move RustDesk client passwords** — there is no server-side copy of them to move, on either side.
+- **`has_password` is a dashboard-only signal.** It tells the browser whether to render a reveal control; it is not part of the client sync.
+- **It is a note, not a vault.** Treat it as a convenience for keeping a record of a machine's password somewhere you control, not as SSO or a secrets manager.
+
+How it is stored:
+
+| Property | Value |
+|---|---|
+| Cipher | AES-256-GCM, random 12-byte IV per record, auth tag stored alongside |
+| Key | HKDF-SHA256 derived from `JWT_SECRET`, under a fixed domain-separation label |
+| Format | `v1:<iv>:<tag>:<ciphertext>` — versioned so a future key or cipher change is detectable |
+| Fails closed | With no usable key (missing, empty, or the `changeme` default) storing and revealing are refused with `503` and nothing is written |
+
+> **If you rotate `JWT_SECRET`, recorded passwords become unreadable.** The vault key is derived from it, so changing the secret permanently breaks decryption of every stored value — reveals will return `422`. There is no re-encryption path. Rotate `JWT_SECRET` and you will need to re-enter recorded passwords afterwards. Back up `./data/` before rotating.
 
 ### What SkonaDesk does not provide
 

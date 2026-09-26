@@ -30,6 +30,7 @@ O SkonaDesk preenche esse espaço intermediário. É uma pilha auto-hospedada qu
 **Um único `docker compose up` e você tem:**
 
 - 📋 **Catálogos de endereços** - organize suas máquinas com apelidos, notas e tags, sincronizados diretamente com o cliente RustDesk
+- 🔑 **Senhas registradas** - guarde a senha de uma máquina junto à entrada, criptografada em repouso, revelada sob demanda e com toda revelação registrada na auditoria *(somente no painel — deliberadamente não sincronizada com os clientes, veja abaixo)*
 - 🗂️ **Grupos de dispositivos** - agrupe máquinas por local, equipe ou finalidade; controle quem pode ver o quê
 - 👥 **Gerenciamento de usuários** - crie contas, defina administradores e gerencie acessos
 - 📡 **Rastreamento ao vivo de dispositivos** - veja quais máquinas estão online agora, o sistema operacional, a versão do cliente e as especificações de hardware
@@ -72,6 +73,7 @@ O RustDesk Pro também é auto-hospedado - não é um serviço em nuvem. É um p
 | Área de trabalho remota (relay + rendezvous) | ✅ | ✅ | ✅ |
 | Auto-hospedado | ✅ | ✅ | ✅ |
 | Catálogos de endereços (sincronizados com o cliente) | ✅ | ❌ | ✅ |
+| Senhas registradas (criptografadas, revelação auditada) | ✅ | ❌ | ✅ |
 | Grupos de dispositivos | ✅ | ❌ | ✅ |
 | Gerenciamento de usuários | ✅ | ❌ | ✅ |
 | Painel administrativo / console web | ✅ | ❌ | ✅ |
@@ -309,6 +311,7 @@ O SkonaDesk é fornecido no estado em que se encontra. Você é responsável por
 - [ ] Para implementações expostas à internet, use SSL - não exponha a API nem o dashboard via HTTP puro em IP público
 - [ ] Restrinja o SSH no servidor: autenticação por chave apenas, desative login por senha
 - [ ] Faça backup de `./data/id_ed25519` (a chave privada do servidor) - se ela for perdida, todos os clientes precisam ser reconfigurados
+- [ ] Se você registrou senhas de catálogo de endereços, faça backup de `./data/` antes de rotacionar o `JWT_SECRET` — as senhas registradas são criptografadas com uma chave derivada dele e não podem ser recuperadas depois
 - [ ] Mantenha as imagens Docker atualizadas periodicamente
 
 ### Proteção contra força bruta
@@ -323,6 +326,32 @@ A API aplica limitação de taxa de login por combinação de **IP + usuário**:
 Usar IP+usuário (em vez de apenas IP) significa que um dispositivo mal configurado na sua LAN tentando as credenciais erradas vai bloquear apenas *aquele usuário* a partir *daquele IP* - não todos os usuários da rede inteira.
 
 > **Observação:** o estado de bloqueio fica em memória e é reiniciado se o contêiner da API for reiniciado. Para bloqueios persistentes após reinícios, coloque um reverse proxy com limitação de taxa própria (por exemplo, os limites embutidos do Nginx Proxy Manager) na frente.
+
+### Senhas registradas — e o que elas não são
+
+Uma entrada do catálogo de endereços pode carregar uma senha registrada manualmente: defina-a no painel, armazenada criptografada, revelada sob demanda pelo proprietário da entrada ou por um administrador. Toda revelação é gravada no log de auditoria como `ab_password_view`.
+
+**Esta não é a senha de conexão salva do RustDesk, e não é sincronizada com os clientes.**
+
+A senha salva do próprio RustDesk fica em cada *cliente*, em `~/.config/rustdesk/peers/<id>.toml`, criptografada com a chave daquela máquina. Ela nunca é enviada ao servidor, então o SkonaDesk não tem nada para guardar nem para devolver. O que este recurso armazena é uma nota separada, digitada por uma pessoa, com a senha de uma máquina, mantida junto à máquina no seu painel.
+
+As consequências práticas:
+
+- **Registrar uma senha não permite que um cliente se conecte sem digitá-la.** A sincronização de `peers` que o cliente faz carrega apenas apelido, nota e tags. Senhas nunca são incluídas nesse payload.
+- **Copiar um catálogo de endereços entre usuários não move as senhas dos clientes RustDesk** — não existe cópia delas no servidor para mover, de nenhum dos lados.
+- **`has_password` é um sinal exclusivo do painel.** Ele informa ao navegador se deve renderizar o controle de revelação; não faz parte da sincronização do cliente.
+- **É uma nota, não um cofre.** Trate como uma conveniência para manter registro da senha de uma máquina em algum lugar sob seu controle, não como SSO ou gerenciador de segredos.
+
+Como é armazenado:
+
+| Propriedade | Valor |
+|---|---|
+| Cifra | AES-256-GCM, IV aleatório de 12 bytes por registro, tag de autenticação armazenada junto |
+| Chave | HKDF-SHA256 derivada do `JWT_SECRET`, sob um rótulo fixo de separação de domínio |
+| Formato | `v1:<iv>:<tag>:<ciphertext>` — versionado para que uma futura mudança de chave ou cifra seja detectável |
+| Falha segura | Sem chave utilizável (ausente, vazia ou o padrão `changeme`) o armazenamento e a revelação são recusados com `503` e nada é gravado |
+
+> **Se você rotacionar o `JWT_SECRET`, as senhas registradas ficam ilegíveis.** A chave do cofre é derivada dele, então alterar o segredo quebra permanentemente a descriptografia de todo valor armazenado — as revelações retornarão `422`. Não há caminho de recriptografia. Rotacione o `JWT_SECRET` e você precisará digitar as senhas registradas novamente. Faça backup de `./data/` antes de rotacionar.
 
 ### O que o SkonaDesk não oferece
 
