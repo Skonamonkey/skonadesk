@@ -7,6 +7,14 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+  # Weekly rebuild so upstream base-image security fixes (Debian point releases,
+  # PHP patch releases) land without anyone having to notice. The base tags are
+  # major.minor pinned (php:8.2-apache, node:20-alpine) so this cannot pull a new
+  # PHP/Node major in. Each scheduled run also gets a dated tag (see meta step)
+  # so there is always a known-good image to roll back to. A broken build pushes
+  # nothing, leaving :latest on the previous working image.
+  schedule:
+    - cron: '0 4 * * 1'
 
 env:
   REGISTRY: ghcr.io
@@ -62,6 +70,8 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
+            # Scheduled (weekly) builds get a dated tag as a rollback point.
+            type=schedule,pattern={{date 'YYYYMMDD'}}
 
       - name: Build and push
         uses: docker/build-push-action@v5
