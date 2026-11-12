@@ -517,13 +517,10 @@ page_open(__('server.title'));
       </p>
     </div>
     <div>
-      <strong>Connection works without login but fails when logged in (or vice versa)</strong>
+      <strong><?= __('server.trouble_login_title') ?></strong>
       <p style="color:var(--text-muted);margin:4px 0 0">
-        SkonaDesk enforces that the <em>initiating</em> machine is logged in — if you are logged out on the
-        calling side the connection is rejected. Conversely, the machine being connected <em>to</em> does not
-        need to be logged in. If connections suddenly break after logging in, check the API URL in the client
-        Network settings matches exactly what is shown on this page.
-      </p>
+        <?= __('server.trouble_login_desc') ?>
+    </p>
     </div>
   </div>
 </div>
