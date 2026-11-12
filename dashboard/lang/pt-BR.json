@@ -330,6 +330,8 @@
     "trouble_sync_desc_http": "Verifique se a porta <strong>21114</strong> está aberta no firewall do servidor e se <code>API_PUBLIC_URL</code> em seu <code>.env</code> corresponde ao IP/porta que seus clientes podem alcançar.",
     "trouble_lan": "Pode conectar na LAN mas não remotamente",
     "trouble_lan_desc": "As portas 21115–21119 não estão abertas no firewall da VPS ou no painel de controle de hospedagem. Verifique as cinco portas acima — tanto TCP quanto UDP na porta 21116.",
+    "trouble_login_title": "A conexão falha dependendo do estado do login",
+    "trouble_login_desc": "O computador que inicia a conexão precisa estar conectado à conta do SkonaDesk. O computador remoto não precisa estar logado. Se a conexão falhar após entrar na conta, verifique se o endereço da API nas configurações de Rede do RustDesk corresponde exatamente ao endereço exibido nesta página.",
     "nat_test": "Teste de tipo NAT",
     "rendezvous_desc": "Rendezvous (hbbs) — Registro de ID e hole punching",
     "relay_desc": "Relay (hbbr) — tráfego de fallback quando P2P falha",
