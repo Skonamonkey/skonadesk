@@ -91,7 +91,7 @@
   },
   "sessions": {
     "title": "Sessões Ativas",
-    "count_active": "%d ativo",
+    "count_active": "%d ativos",
     "auto_refresh": "Atualiza automaticamente a cada 5 segundos",
     "refresh_now": "Atualizar agora",
     "empty_title": "Nenhuma sessão ativa agora",
@@ -105,11 +105,11 @@
     "caller_ip": "IP do Chamador",
     "live": "Ativa",
     "type_file": "Arquivo",
-    "type_port_fwd": "Port Fwd",
+    "type_port_fwd": "Portas",
     "type_remote": "Remoto",
     "connected": "Conectado",
-    "type_conn": "conex",
-    "type_file_xfer": "transferência de arquivo",
+    "type_conn": "conexão",
+    "type_file_xfer": "arquivo",
     "type_remote_label": "remoto"
   },
   "addressbook": {
