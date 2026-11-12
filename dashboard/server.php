@@ -520,7 +520,7 @@ page_open(__('server.title'));
       <strong><?= __('server.trouble_login_title') ?></strong>
       <p style="color:var(--text-muted);margin:4px 0 0">
         <?= __('server.trouble_login_desc') ?>
-    </p>
+      </p>
     </div>
   </div>
 </div>
