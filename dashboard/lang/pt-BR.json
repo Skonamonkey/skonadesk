@@ -91,7 +91,7 @@
   },
   "sessions": {
     "title": "Sessões Ativas",
-    "count_active": "%d ativos",
+    "count_active": "%d ativa",
     "auto_refresh": "Atualiza automaticamente a cada 5 segundos",
     "refresh_now": "Atualizar agora",
     "empty_title": "Nenhuma sessão ativa agora",
